@@ -129,7 +129,88 @@ Manually navigating to `http://[public-ip]` resolved the issue.
 ---
 
 ## Advanced Tier — AMI Creation
-*Coming soon*
+
+### What is an AMI?
+An Amazon Machine Image (AMI) is a golden image — a complete snapshot 
+of a configured EC2 instance that can be used to launch identical 
+instances on demand.
+
+**Why AMIs matter:**
+- **Rapid scaling** — spin up 50 identical configured instances in 
+  minutes without manual setup
+- **Consistency** — every instance launched from the AMI is identical, 
+  eliminating configuration drift
+- **Disaster recovery** — if an instance is compromised or fails, 
+  terminate it and replace it instantly from the golden image
+- **Immutable infrastructure** — instead of patching a potentially 
+  compromised server, destroy and replace from a known-good baseline
+
+> **Real-world analogy:** The original Amazon Linux 2023 AMI is the 
+> plain base. Our AMI is the fully configured golden image — same base, 
+> with Apache installed, enabled, and ready to serve traffic the moment 
+> the instance boots.
+
+### Step 1: Create the AMI
+
+From EC2 → Instances → select `levelupbank-webserver` →
+Actions → Image and templates → Create image
+
+| Setting | Value |
+|---|---|
+| Image name | `levelupbank-webserver-ami` |
+| Description | `Golden image — Amazon Linux 2023 with Apache installed and enabled` |
+| AMI ID | `ami-0e863c09000596c5e` |
+| Visibility | Private |
+| Architecture | x86_64 |
+| Virtualization | HVM |
+
+> **Security Note:** Visibility is set to Private — only this AWS 
+> account can use this image. Never make a golden image public unless 
+> intentionally sharing it, as it could expose your server configuration 
+> to bad actors.
+
+> **Cost Note:** AMIs themselves are free. The EBS snapshot backing 
+> the AMI costs ~$0.05/GB/month (~$0.40/month for an 8GB instance). 
+> Delete AMIs and their associated snapshots when no longer needed.
+
+### Step 2: Launch Instance from AMI
+
+Launched a new instance directly from the golden image:
+
+| Setting | Value |
+|---|---|
+| Instance name | `levelupbank-from-ami` |
+| AMI | `ami-0e863c09000596c5e` (our golden image) |
+| Instance type | t2.micro |
+| Security group | `levelupbank-sg` (existing) |
+| User-data | **Empty — not required** |
+| Public IP | `23.20.71.156` |
+
+### Step 3: Verify
+
+- Navigated to `http://23.20.71.156` in an incognito browser
+- Confirmed: **"It works!"** — Apache serving traffic immediately
+- No user-data script required — Apache was already installed 
+  and enabled inside the golden image
+
+### Key Insight — User-Data vs AMI
+
+| Approach | How Apache Gets Installed | Time to Serve Traffic |
+|---|---|---|
+| User-data script | Installs on first boot | 2-3 min after launch |
+| Golden AMI | Already installed | Immediately on boot |
+
+> **DevSecOps Note:** Adding a user-data script to an instance launched 
+> from this AMI could cause conflicts since Apache is already installed. 
+> In production, scripts should be **idempotent** — designed to run 
+> safely multiple times without causing errors regardless of current state.
+
+### Running Instances
+
+| Instance | ID | Public IP | Source |
+|---|---|---|---|
+| `levelupbank-webserver` | i-0525b76b904678550 | 54.172.59.245 | Original — user-data |
+| `levelupbank-from-ami` | i-01059c9ef7d501a38 | 23.20.71.156 | Golden AMI — no script |
 
 ## Complex Tier — CLI Method
 *Coming soon*
