@@ -213,7 +213,296 @@ Launched a new instance directly from the golden image:
 | `levelupbank-from-ami` | i-01059c9ef7d501a38 | 23.20.71.156 | Golden AMI — no script |
 
 ## Complex Tier — CLI Method
-*Coming soon*
+
+The complex tier replicates the full Foundational and Advanced implementation
+entirely through the AWS CLI — no console clicks for resource creation.
+The console was only used to look up existing resource IDs where permitted.
+
+### Tools & Services Added
+- AWS CLI (PowerShell on Windows)
+- `aws ec2` subcommands
+- JSON config files for multi-parameter commands
+
+---
+
+## Complex Tier — CLI Method
+
+The complex tier replicates the full Foundational and Advanced implementation
+entirely through the AWS CLI — no console clicks for resource creation.
+The console was only used to look up existing resource IDs where permitted.
+
+### Tools & Services Added
+- AWS CLI (PowerShell on Windows)
+- `aws ec2` subcommands
+- JSON config files for multi-parameter commands
+
+---
+
+### Step 1: Gather Required IDs
+
+Before creating any resources, the following IDs were retrieved from the console
+or via CLI to use in subsequent commands.
+
+**Retrieve VPC ID:**
+```powershell
+aws ec2 describe-vpcs --output table
+```
+
+| Resource | ID |
+|---|---|
+| Default VPC | `vpc-030bb7ecb8c0c11a3` |
+
+> **Why the Default VPC:** This project focuses on CLI skills, not network
+> architecture. The Default VPC already has subnets and an internet gateway
+> configured, removing unnecessary networking complexity from the scope.
+
+---
+
+### Step 2: Create Security Group
+
+```powershell
+aws ec2 create-security-group `
+  --group-name "luit-complex-sg" `
+  --description "Security group for LUIT complex EC2 project" `
+  --vpc-id vpc-030bb7ecb8c0c11a3
+```
+
+**Output:**
+| Resource | ID |
+|---|---|
+| Security Group | `sg-094801c3672a3fe99` |
+
+---
+
+### Step 3: Configure Inbound Rules
+
+Both rules were added separately to demonstrate individual port authorization.
+They can also be combined using `--ip-permissions` with a JSON array.
+
+**Port 80 — HTTP:**
+```powershell
+aws ec2 authorize-security-group-ingress `
+  --group-id sg-094801c3672a3fe99 `
+  --protocol tcp `
+  --port 80 `
+  --cidr 0.0.0.0/0
+```
+
+**Port 22 — SSH:**
+```powershell
+aws ec2 authorize-security-group-ingress `
+  --group-id sg-094801c3672a3fe99 `
+  --protocol tcp `
+  --port 22 `
+  --cidr 0.0.0.0/0
+```
+
+| Port | Protocol | Source | Purpose |
+|---|---|---|---|
+| 80 | TCP | 0.0.0.0/0 | HTTP web traffic |
+| 22 | TCP | 0.0.0.0/0 | SSH management access |
+
+> **Security Note:** Port 22 open to `0.0.0.0/0` is acceptable for a
+> learning lab. In production, SSH would be restricted to a specific
+> corporate CIDR range (`your.ip.address/32`). Automated bots actively
+> scan AWS IP ranges — your only protection on an open port 22 is a
+> strong, non-leaked key pair.
+
+---
+
+### Step 4: Retrieve Latest Amazon Linux 2023 AMI
+
+```powershell
+aws ec2 describe-images `
+  --owners amazon `
+  --filters "Name=owner-alias,Values=amazon" "Name=architecture,Values=x86_64" "Name=name,Values=al2023-ami-*" `
+  --query "sort_by(Images, &CreationDate)[-1].ImageId" `
+  --output text
+```
+
+| Resource | ID |
+|---|---|
+| Amazon Linux 2023 AMI | `ami-0102a36b3e9d5e4df` |
+
+> **Two most important flags:**
+> - `--owners amazon` — ensures only official Amazon-published AMIs are
+>   returned. Never launch from an unknown owner — third-party AMIs can
+>   contain malware or backdoors
+> - `sort_by(Images, &CreationDate)[-1]` — automatically selects the
+>   most recent AMI so the instance isn't launched on an outdated image
+>   with unpatched vulnerabilities
+
+---
+
+### Step 5: Create User-Data Script
+
+```bash
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+```
+
+Saved locally as `userdata.sh` and passed to the instance at launch via
+`file://userdata.sh`.
+
+> **Two most important lines:**
+> - `systemctl start httpd` — starts Apache immediately on boot. Without
+>   this, Apache is installed but not running and the public IP returns
+>   nothing
+> - `systemctl enable httpd` — ensures Apache restarts automatically on
+>   every subsequent reboot. Without this, any reboot takes the site down
+
+---
+
+### Step 6: Launch EC2 Instance
+
+```powershell
+aws ec2 run-instances `
+  --image-id ami-0102a36b3e9d5e4df `
+  --instance-type t2.micro `
+  --key-name LUIT-2-kp `
+  --security-group-ids sg-094801c3672a3fe99 `
+  --user-data file://userdata.sh `
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=luit-complex-ec2}]" `
+  --count 1
+```
+
+**Wait for running state:**
+```powershell
+aws ec2 describe-instances `
+  --instance-ids i-0ba6577915cbbf216 `
+  --query "Reservations[0].Instances[0].{State:State.Name,PublicIP:PublicIpAddress}" `
+  --output table
+```
+
+| Resource | Value |
+|---|---|
+| Instance ID | `i-0ba6577915cbbf216` |
+| Public IP | `54.234.147.207` |
+| State | `running` |
+
+---
+
+### Step 7: Verify Apache Installation
+
+Navigated to `http://54.234.147.207` in browser.
+
+Confirmed default Apache page: **"It works!"**
+
+> **Important:** Use `http://` not `https://` — only port 80 was opened.
+> The browser defaulting to HTTPS (port 443) will cause a connection
+> timeout since port 443 was not added to the security group.
+
+---
+
+### Step 8: Create AMI via CLI
+
+```powershell
+aws ec2 create-image `
+  --instance-id i-0ba6577915cbbf216 `
+  --name "luit-complex-ami" `
+  --description "AMI created from luit-complex-ec2 via CLI" `
+  --no-reboot
+```
+
+**Wait for AMI to become available:**
+```powershell
+aws ec2 describe-images `
+  --image-ids ami-065e7116183bb872a `
+  --query "Images[0].State" `
+  --output text
+```
+
+| Resource | ID |
+|---|---|
+| Custom AMI | `ami-065e7116183bb872a` |
+| State | `available` |
+
+> **Two most important flags:**
+> - `--no-reboot` — creates the AMI without stopping the instance,
+>   keeping Apache available during image creation. Without this flag,
+>   AWS reboots the instance for a clean snapshot, causing downtime
+> - `--name "luit-complex-ami"` — the golden image name. Be descriptive —
+>   in production you'd include a version or date stamp
+>   (e.g. `levelupbank-ami-v1-2026-04-24`) for traceability
+
+---
+
+### Step 9: Launch Instance from Custom AMI
+
+```powershell
+aws ec2 run-instances `
+  --image-id ami-065e7116183bb872a `
+  --instance-type t2.micro `
+  --key-name LUIT-2-kp `
+  --security-group-ids sg-094801c3672a3fe99 `
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=luit-complex-ec2-from-ami}]" `
+  --count 1
+```
+
+Note: No `--user-data` flag. Apache is already installed and enabled
+inside the golden image — no bootstrap script required.
+
+**Wait for running state:**
+```powershell
+aws ec2 describe-instances `
+  --instance-ids i-0b895559a8d8f679b `
+  --query "Reservations[0].Instances[0].{State:State.Name,PublicIP:PublicIpAddress}" `
+  --output table
+```
+
+| Resource | Value |
+|---|---|
+| Instance ID | `i-0b895559a8d8f679b` |
+| Public IP | `54.160.195.77` |
+| State | `running` |
+
+---
+
+### Step 10: Verify Apache on New Instance
+
+Navigated to `http://54.160.195.77` in browser.
+
+Confirmed: **"It works!"** — Apache serving traffic immediately with
+no user-data script. Apache was already installed and enabled inside
+the golden image.
+
+---
+
+### Running Instances — CLI Method
+
+| Instance | ID | Public IP | Source |
+|---|---|---|---|
+| `luit-complex-ec2` | `i-0ba6577915cbbf216` | `54.234.147.207` | Amazon Linux 2023 + user-data |
+| `luit-complex-ec2-from-ami` | `i-0b895559a8d8f679b` | `54.160.195.77` | Custom golden AMI — no script |
+
+---
+
+### Cleanup
+
+To avoid ongoing costs after completing the lab, resources should be
+terminated in this order:
+
+```powershell
+# 1. Terminate both instances
+aws ec2 terminate-instances --instance-ids i-0ba6577915cbbf216 i-0b895559a8d8f679b
+
+# 2. Deregister the custom AMI
+aws ec2 deregister-image --image-id ami-065e7116183bb872a
+
+# 3. Delete the AMI snapshot (get snapshot ID from console or describe-snapshots)
+aws ec2 delete-snapshot --snapshot-id <snapshot-id>
+
+# 4. Delete the security group (only after instances are terminated)
+aws ec2 delete-security-group --group-id sg-094801c3672a3fe99
+```
+
+> **Cost Note:** Stopped instances still incur EBS storage charges.
+> Always **terminate** rather than stop when done with a lab. A single
+> t2.micro runs ~744 hours/month — within the 750-hour free tier limit.
+> Running two simultaneously still stays within free tier.
 
 ---
 
