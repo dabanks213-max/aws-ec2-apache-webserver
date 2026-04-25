@@ -526,7 +526,7 @@ aws ec2 delete-security-group --group-id sg-094801c3672a3fe99
   separate security group rules
 
 ## Next Iterations
-- [ ] Create AMI from running instance and launch new instance from it
-- [ ] Repeat full implementation using AWS CLI
-- [ ] Create key pair via CLI
-- [ ] Add HTTPS with SSL certificate
+- [x] Create AMI from running instance and launch new instance from it
+- [x] Repeat full implementation using AWS CLI
+- [x] Create key pair via CLI
+- [x] Add HTTPS with SSL certificate
